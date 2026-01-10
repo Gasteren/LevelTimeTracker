@@ -1,0 +1,9 @@
+## Interface: 11508, 11507, 20505, 30405, 38000, 40402, 50503, 50502, 110205, 110207, 120000
+## Title: Level Time Tracker
+## Author: Frost-Lightbringer
+## Version: 11.2.7
+## SavedVariables: LevelTimeTrackerDB
+
+Core.lua
+UI.lua
+Graph.lua
