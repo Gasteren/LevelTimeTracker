@@ -47,9 +47,9 @@ function LTT:GetCharData()
 
     local d = LevelTimeTrackerDB[key]
 
-    -- 🔑 ALWAYS keep these dynamic
+    -- ALWAYS keep these dynamic
     d.currentLevel = UnitLevel("player")
-    d.maxLevel = GetMaxPlayerLevel()   -- <-- THIS IS THE IMPORTANT ADDITION
+    d.maxLevel = GetMaxPlayerLevel()   -- Instead of using a static number like 80, i grab max level for future xpacks.
 
     -- Auto-heal startLevel
     local lowest
