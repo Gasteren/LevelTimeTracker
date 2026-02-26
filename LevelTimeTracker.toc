@@ -3,7 +3,7 @@
 ## Title: Level Time Tracker
 ## Author: Frost-Lightbringer
 ## Notes: Track exactly how long each level takes, with live XP/hour, progress tracking, and a clean in-game UI.
-## Version: 12.0.0.1
+## Version: 12.0.1
 ## SavedVariables: LevelTimeTrackerDB
 
 ## DefaultState: enabled
