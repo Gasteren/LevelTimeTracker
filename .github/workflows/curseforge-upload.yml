@@ -1,0 +1,32 @@
+name: Upload to CurseForge
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create zip
+        run: |
+          mkdir LevelTimeTracker
+          cp *.lua *.toc LevelTimeTracker/
+          zip -r LevelTimeTracker.zip LevelTimeTracker
+
+      - name: Upload to CurseForge
+        uses: itsmeow/curseforge-upload@v3
+        with:
+          token: "${{ secrets.ADIBAGS_FISHING }}"
+          project_id: "1425147"
+          game_endpoint: "wow"
+          file_path: "LevelTimeTracker.zip"
+          game_versions: "12.0.5"
+          release_type: "release"
+          display_name: "LevelTimeTracker - ${{ github.event.head_commit.timestamp }}"
+          changelog: "${{ github.event.head_commit.message }}"
+          changelog_type: "markdown"
