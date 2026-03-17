@@ -21,7 +21,7 @@ jobs:
       - name: Upload to CurseForge
         uses: itsmeow/curseforge-upload@v3
         with:
-          token: "${{ secrets.ADIBAGS_FISHING }}"
+          token: "${{ secrets.LEVELTIMETRACKER }}"
           project_id: "1425147"
           game_endpoint: "wow"
           file_path: "LevelTimeTracker.zip"
