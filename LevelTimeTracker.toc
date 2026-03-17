@@ -6,6 +6,7 @@
 ## Version: 12.0.1
 ## SavedVariables: LevelTimeTrackerDB
 
+
 ## DefaultState: enabled
 
 ## IconTexture: Interface\ICONS\ability_bossmagistrix_timewarp2
