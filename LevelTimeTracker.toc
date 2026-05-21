@@ -5,6 +5,7 @@
 ## Notes: Track exactly how long each level takes, with live XP/hour, progress tracking, and a clean in-game UI.
 ## Version: 12.0.5
 ## SavedVariables: LevelTimeTrackerDB
+## X-Curse-Project-ID: 1425147
 
 
 ## DefaultState: enabled
