@@ -1,9 +1,9 @@
-## Interface: 110205, 110207, 120000, 120001, 120005
+## Interface: 120005, 120007
 
 ## Title: Level Time Tracker
 ## Author: Frost-Lightbringer
 ## Notes: Track exactly how long each level takes, with live XP/hour, progress tracking, and a clean in-game UI.
-## Version: 12.0.5
+## Version: 12.0.7
 ## SavedVariables: LevelTimeTrackerDB
 ## X-Curse-Project-ID: 1425147
 
