@@ -17,6 +17,7 @@ It provides accurate, persistent timing, live XP/hour calculations, and a clean 
 - Compact and full UI modes
 - Chat message on every level-up
 - Expansion-proof (dynamic max level detection)
+- Automatically adapts to new level caps
 
 ---
 
@@ -48,11 +49,3 @@ Open the UI: /ltt
 - Level-up timing is recorded even for large XP jumps
 
 ---
-
-## Compatibility
-
-- Retail
-- PTR
-- Beta
-- Automatically adapts to new level caps
-
