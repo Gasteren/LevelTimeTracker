@@ -1,275 +1,292 @@
-local UI = CreateFrame("Frame", "LTT_MainFrame", UIParent, "BackdropTemplate")
-_G.LTT_UI = UI
+-- UI.lua: the Level Time Tracker window. A status line, the pages (Overview, Levels, Characters, Options) and the
+-- character-frame tabs that switch between them.
+local ADDON, ns = ...
+local L, U, C, COLOR = ns.L, ns.U, ns.C, ns.COLOR
+local W, Data = ns.W, ns.Data
 
--------------------------------------------------
--- LOCAL STATE
--------------------------------------------------
-local compactMode = false
+local UI = {}
+ns.UI = UI
 
--------------------------------------------------
--- UI SETTINGS
--------------------------------------------------
-local function GetUISettings()
-    LevelTimeTrackerDB.ui = LevelTimeTrackerDB.ui or {}
-    LevelTimeTrackerDB.ui.compact = LevelTimeTrackerDB.ui.compact or false
-    return LevelTimeTrackerDB.ui
+local format = string.format
+
+UI.ARROW = "\194\187" -- », between a level and the next (the game's fonts have no arrow)
+UI.DOT = "\194\183" -- ·
+UI.WIDTH, UI.HEIGHT = 720, 470
+
+UI.pages = {}
+UI.byId = {}
+UI.panels = {}
+UI.dirty = {}
+
+local frame
+
+-- def: { id, label, tip, order, create(panel), refresh(panel), tick(panel) (twice a second while shown) }
+function UI.RegisterPage(def)
+	UI.pages[#UI.pages + 1] = def
+	UI.byId[def.id] = def
+	table.sort(UI.pages, function(a, b)
+		return (a.order or 99) < (b.order or 99)
+	end)
+	UI.dirty[def.id] = true
 end
 
--------------------------------------------------
--- POSITION SAVE / RESTORE
--------------------------------------------------
-local function SavePosition()
-    local p, _, rp, x, y = UI:GetPoint()
-    LevelTimeTrackerDB.ui.position = { p, rp, x, y }
+-- The character the Levels page shows (another one after a click on the Characters page).
+function UI.ViewKey()
+	local key = UI.viewKey
+	if key and Data.Get(key) then
+		return key
+	end
+	return ns.Tracker.key
 end
 
-local function RestorePosition()
-    UI:ClearAllPoints()
-    local pos = LevelTimeTrackerDB.ui.position
-    if pos then
-        UI:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
-    else
-        UI:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
+function UI.ViewChar()
+	return Data.Get(UI.ViewKey())
 end
 
--------------------------------------------------
--- ESC CONTROL
--------------------------------------------------
-local function AddESC()
-    for _, f in ipairs(UISpecialFrames) do
-        if f == "LTT_MainFrame" then return end
-    end
-    tinsert(UISpecialFrames, "LTT_MainFrame")
+local STATUS_ICON = {
+	green = "Interface\\FriendsFrame\\StatusIcon-Online",
+	orange = "Interface\\FriendsFrame\\StatusIcon-Away",
+	grey = "Interface\\FriendsFrame\\StatusIcon-Offline",
+}
+
+-- What the clock is doing, for the indicator next to the close button: text, colour, tooltip.
+function UI.ClockState()
+	local T = ns.Tracker
+	if not T.char then
+		return L["Starting..."], "grey"
+	elseif T:AtMax() then
+		return L["Max level"], "green", L["This character is at max level: there is nothing more to time."]
+	elseif not T:Synced() then
+		return L["Reading /played..."], "orange", L["Level Time Tracker asked the game for /played and waits for the answer. The time on this level shows as soon as it comes in."]
+	elseif T:XPDisabled() then
+		return L["Experience is off"], "orange", L["You turned off experience gain. The clock keeps running, as /played does."]
+	end
+	return format(L["Timing level %d"], T.level), "green", L["The time on this level counts like /played: all the time you are logged in on this character."]
 end
 
-local function RemoveESC()
-    for i, f in ipairs(UISpecialFrames) do
-        if f == "LTT_MainFrame" then
-            table.remove(UISpecialFrames, i)
-            return
-        end
-    end
+function UI.UpdateStatus()
+	if not frame then
+		return
+	end
+	local chars, levels = Data.Total()
+	local charText = format(chars == 1 and L["%s character"] or L["%s characters"], C(COLOR.white, chars))
+	local levelText = format(levels == 1 and L["%s level timed"] or L["%s levels timed"], C(COLOR.white, levels))
+	frame.status:SetText(charText .. "  " .. UI.DOT .. "  " .. levelText)
+	local text, color, tip = UI.ClockState()
+	local st = frame.state
+	st.text:SetText(C(color == "orange" and COLOR.orange or color == "grey" and COLOR.grey or COLOR.green, text))
+	st.icon:SetTexture(STATUS_ICON[color] or STATUS_ICON.grey)
+	st.tip = tip
+	st:SetWidth(math.ceil(st.text:GetStringWidth()) + 18)
 end
 
--------------------------------------------------
--- FRAME SETUP
--------------------------------------------------
-UI:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    edgeSize = 16,
-})
-UI:SetMovable(true)
-UI:EnableMouse(true)
-UI:RegisterForDrag("LeftButton")
-UI:SetScript("OnDragStart", UI.StartMoving)
-UI:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    SavePosition()
-end)
-UI:Hide()
-
--------------------------------------------------
--- BUTTONS
--------------------------------------------------
-UI.close = CreateFrame("Button", nil, UI, "UIPanelCloseButton")
-UI.close:SetPoint("TOPRIGHT", -6, -6)
-
-UI.compactBtn = CreateFrame("Button", nil, UI, "UIPanelButtonTemplate")
-UI.compactBtn:SetSize(22, 22)
-UI.compactBtn:SetPoint("RIGHT", UI.close, "LEFT", -4, 0)
-UI.compactBtn:SetText("C")
-
--------------------------------------------------
--- CLASS COLOR
--------------------------------------------------
-local _, class = UnitClass("player")
-local c = RAID_CLASS_COLORS[class] or { r = .2, g = .6, b = 1 }
-
--------------------------------------------------
--- TITLE
--------------------------------------------------
-UI.title = UI:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-UI.title:SetPoint("TOPLEFT", 16, -12)
-UI.title:SetText("Level Time Tracker")
-
--------------------------------------------------
--- PROGRESS BAR
--------------------------------------------------
-UI.bar = CreateFrame("StatusBar", nil, UI)
-UI.bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-UI.bar:SetStatusBarColor(c.r, c.g, c.b)
-UI.bar:SetMinMaxValues(0, 1)
-
-UI.bar.bg = UI.bar:CreateTexture(nil, "BACKGROUND")
-UI.bar.bg:SetAllPoints()
-UI.bar.bg:SetColorTexture(.1, .1, .1, .8)
-
-UI.progressIcon = UI:CreateTexture(nil, "ARTWORK")
-UI.progressIcon:SetSize(18, 18)
-UI.progressIcon:SetTexture("Interface\\Icons\\Ability_Hunter_Pathfinding")
-
-UI.progressText = UI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-
--------------------------------------------------
--- LIVE STATS
--------------------------------------------------
-UI.timeIcon = UI:CreateTexture(nil, "ARTWORK")
-UI.timeIcon:SetSize(16, 16)
-UI.timeIcon:SetTexture("Interface\\Icons\\INV_Misc_PocketWatch_01")
-
-UI.liveText = UI:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-
--------------------------------------------------
--- DETAILS
--------------------------------------------------
-UI.scroll = CreateFrame("ScrollFrame", nil, UI, "UIPanelScrollFrameTemplate")
-UI.content = CreateFrame("Frame", nil, UI.scroll)
-UI.scroll:SetScrollChild(UI.content)
-UI.content:SetWidth(600)
-UI.rows = {}
-
--------------------------------------------------
--- HELPERS
--------------------------------------------------
-local function GetOverallProgress(d)
-    local span = d.maxLevel - d.startLevel
-    if span <= 0 then return 0 end
-
-    local completed = d.currentLevel - d.startLevel
-    local xpFrac = UnitXPMax("player") > 0 and (UnitXP("player") / UnitXPMax("player")) or 0
-    return math.min((completed + xpFrac) / span, 1)
+local function refreshVisible()
+	if not frame or not frame:IsShown() then
+		return
+	end
+	UI.UpdateStatus()
+	local id = UI.current
+	local def, panel = UI.byId[id], UI.panels[id]
+	if def and panel and UI.dirty[id] then
+		UI.dirty[id] = false
+		if def.refresh then
+			ns.SafeCall(def.refresh, panel)
+		end
+	end
 end
 
--------------------------------------------------
--- LAYOUT
--------------------------------------------------
-function UI:ApplyLayout()
-    if compactMode then
-        RemoveESC()
-        UI:SetSize(420, 170)
-        UI.scroll:Hide()
-        UI.title:Hide()
-        UI.compactBtn:SetText("F")
-    else
-        AddESC()
-        UI:SetSize(660, 560)
-        UI.scroll:Show()
-        UI.title:Show()
-        UI.compactBtn:SetText("C")
-
-        UI.scroll:SetPoint("TOPLEFT", 30, -150)
-        UI.scroll:SetPoint("BOTTOMRIGHT", -30, 30)
-    end
-
-    UI.bar:SetPoint("TOPLEFT", 30, compactMode and -30 or -56)
-    UI.bar:SetSize(compactMode and 360 or 600, compactMode and 16 or 18)
-
-    UI.progressIcon:SetPoint("RIGHT", UI.bar, "LEFT", -8, 0)
-    UI.progressText:SetPoint("TOPLEFT", UI.bar, "BOTTOMLEFT", 0, -6)
-    UI.timeIcon:SetPoint("LEFT", UI.progressText, "LEFT", 0, compactMode and -22 or -24)
-    UI.liveText:SetPoint("LEFT", UI.timeIcon, "RIGHT", 6, 0)
+-- Marks a page (or all of them) as stale; the visible one is redrawn right after.
+function UI.Refresh(id)
+	if id then
+		UI.dirty[id] = true
+	else
+		for k in pairs(UI.byId) do
+			UI.dirty[k] = true
+		end
+	end
+	if frame and frame:IsShown() then
+		ns.Debounce("ui-refresh", 0.05, refreshVisible)
+	end
 end
 
--------------------------------------------------
--- COMPACT TOGGLE
--------------------------------------------------
-UI.compactBtn:SetScript("OnClick", function()
-    compactMode = not compactMode
-    LevelTimeTrackerDB.ui.compact = compactMode
-    UI:ApplyLayout()
-    UI:Refresh()
-end)
-
--------------------------------------------------
--- LIVE UPDATE
--------------------------------------------------
-UI:SetScript("OnUpdate", function()
-    if not UI:IsShown() then return end
-    local d = LTT:GetCharData()
-    if not d then return end
-
-    UI.bar:SetValue(GetOverallProgress(d))
-
-    UI.progressText:SetText(string.format(
-        "Level %d / %d   Total Time: %s",
-        d.currentLevel,
-        d.maxLevel,
-        SecondsToTime(d.totalTime or 0)
-    ))
-
-    local since = d._lastLevelTime and (GetTime() - d._lastLevelTime) or 0
-    local gainedXP = math.max(UnitXP("player") - (d._lastLevelXP or 0), 0)
-    local xph = (since > 0 and gainedXP > 0) and (gainedXP / since) * 3600 or 0
-
-    UI.liveText:SetText(string.format(
-        "Since last level: %s   XP/hour: %s",
-        SecondsToTime(since),
-        BreakUpLargeNumbers(math.floor(xph))
-    ))
-end)
-
--------------------------------------------------
--- REFRESH
--------------------------------------------------
-function UI:Refresh()
-    local d = LTT:GetCharData()
-    if not d then return end
-
-    for _, r in ipairs(UI.rows) do r:Hide() end
-    wipe(UI.rows)
-
-    if not compactMode then
-        local y = -6
-        local shown = false
-
-        for lvl = d.currentLevel - 1, d.startLevel, -1 do
-            local t = d.levelTimes[lvl]
-            if t then
-                local row = UI.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                row:SetPoint("TOPLEFT", 4, y)
-                row:SetText(string.format(
-                    "Level %d -> %d : %s",
-                    lvl, lvl + 1, SecondsToTime(t)
-                ))
-                y = y - 20
-                table.insert(UI.rows, row)
-                shown = true
-            end
-        end
-
-        if not shown then
-            local row = UI.content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-            row:SetPoint("TOPLEFT", 4, y)
-            row:SetText("XP-based tracking started recently. New data appears after your next level-up.")
-            table.insert(UI.rows, row)
-            y = y - 20
-        end
-
-        UI.content:SetHeight(-y + 10)
-    end
+local function selectPage(id)
+	local def = UI.byId[id]
+	if not def then
+		return
+	end
+	if UI.current and UI.current ~= id then
+		local old = UI.panels[UI.current]
+		if old then
+			old:Hide()
+		end
+	end
+	UI.current = id
+	ns.S.tab = id
+	local panel = UI.panels[id]
+	if not panel then
+		panel = CreateFrame("Frame", nil, frame.content)
+		panel:SetAllPoints()
+		UI.panels[id] = panel
+		ns.SafeCall(def.create, panel)
+		UI.dirty[id] = true
+	end
+	panel:Show()
+	UI.dirty[id] = false
+	if def.refresh then
+		ns.SafeCall(def.refresh, panel)
+	end
 end
 
--------------------------------------------------
--- INIT
--------------------------------------------------
-UI:RegisterEvent("PLAYER_LOGIN")
-UI:SetScript("OnEvent", function()
-    compactMode = GetUISettings().compact
+local TICK = 0.5
+
+local function build()
+	frame = W.Window("LevelTimeTrackerFrame", ns.title, UI.WIDTH, UI.HEIGHT, { sound = true })
+	frame.content = CreateFrame("Frame", nil, frame)
+	frame.content:SetPoint("TOPLEFT", 14, -30)
+	frame.content:SetPoint("BOTTOMRIGHT", -14, 14)
+
+	frame.status = W.OneLine(W.Label(frame, "", "GameFontHighlightSmall"))
+	frame.status:SetPoint("TOPLEFT", 20, -15)
+	frame.status:SetWidth(220)
+
+	local st = CreateFrame("Frame", nil, frame)
+	st:SetSize(150, 16)
+	st:SetPoint("TOPRIGHT", -40, -13)
+	st.text = st:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	st.text:SetPoint("RIGHT")
+	st.text:SetJustifyH("RIGHT")
+	st.icon = st:CreateTexture(nil, "ARTWORK")
+	st.icon:SetSize(14, 14)
+	st.icon:SetPoint("RIGHT", st.text, "LEFT", -3, 0)
+	st:EnableMouse(true)
+	st:SetScript("OnEnter", function(self)
+		if self.tip then
+			W.ShowTip(self, L["The clock"], self.tip, "ANCHOR_BOTTOMLEFT")
+		end
+	end)
+	st:SetScript("OnLeave", W.HideTip)
+	frame.state = st
+
+	local defs = {}
+	for i, def in ipairs(UI.pages) do
+		defs[i] = { id = def.id, label = def.label, tip = def.tip }
+	end
+	frame.tabs = W.TabBar(frame, defs, selectPage)
+
+	local elapsed = 0
+	frame:SetScript("OnUpdate", function(_, dt)
+		elapsed = elapsed + dt
+		if elapsed < TICK then
+			return
+		end
+		elapsed = 0
+		UI.UpdateStatus()
+		local def, panel = UI.byId[UI.current], UI.panels[UI.current]
+		if def and def.tick and panel and panel:IsShown() then
+			ns.SafeCall(def.tick, panel)
+		end
+	end)
+
+	function frame:onShown()
+		self.tabs:Relevel()
+		UI.Refresh()
+	end
+	return frame
+end
+
+function UI.Show(id)
+	if not frame then
+		build()
+	end
+	id = id or (frame:IsShown() and UI.current) or ns.S.tab
+	if not UI.byId[id] then
+		id = UI.pages[1].id
+	end
+	frame:Show()
+	frame:Raise()
+	frame.tabs:Relevel()
+	frame.tabs:Select(id)
+	UI.UpdateStatus()
+	return UI.panels[id]
+end
+
+function UI.Hide()
+	if frame then
+		frame:Hide()
+	end
+end
+
+function UI.Toggle(id)
+	if frame and frame:IsShown() and (not id or id == UI.current) then
+		frame:Hide()
+	else
+		UI.Show(id)
+	end
+end
+
+-- Opens the Levels page on a character (nil: the one you play).
+function UI.ShowLevels(key)
+	UI.viewKey = key ~= ns.Tracker.key and key or nil
+	UI.Refresh("levels")
+	UI.Show("levels")
+end
+
+for _, message in ipairs({ "LEVEL_UP", "PLAYED", "DATA_CHANGED", "THEME_CHANGED" }) do
+	ns:On(message, function()
+		UI.Refresh()
+	end)
+end
+
+-- Experience changes often (every kill): only the pages showing it are redrawn, and not more than once a second.
+ns:On("XP", function()
+	if frame and frame:IsShown() then
+		UI.dirty.overview = true
+		UI.dirty.characters = true
+		ns.Debounce("ui-xp", 1, refreshVisible)
+	end
 end)
 
--------------------------------------------------
--- SLASH
--------------------------------------------------
-SLASH_LTT1 = "/ltt"
-SlashCmdList["LTT"] = function()
-    UI:ApplyLayout()
-    if UI:IsShown() then
-        UI:Hide()
-    else
-        RestorePosition()
-        UI:Show()
-        UI:Refresh()
-    end
+ns:On("SETTINGS_CHANGED", function(key)
+	if key == "scale" then
+		W.ApplyScale()
+	end
+	UI.Refresh()
+end)
+
+-- A little row of text: a gold label on the left and a value on the right (tip: a tooltip explaining it).
+function UI.StatRow(parent, label, tip)
+	local row = CreateFrame("Frame", nil, parent)
+	row:SetHeight(18)
+	row.label = W.OneLine(row:CreateFontString(nil, "ARTWORK", "LevelTimeTrackerFontNormalSmall"))
+	row.label:SetPoint("LEFT")
+	row.label:SetJustifyH("LEFT")
+	row.label:SetText(label)
+	row.value = W.OneLine(row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall"))
+	row.value:SetPoint("RIGHT")
+	row.value:SetPoint("LEFT", row.label, "RIGHT", 8, 0)
+	row.value:SetJustifyH("RIGHT")
+	row:EnableMouse(true)
+	W.AttachTooltip(row, label, tip)
+
+	-- A new label (and tooltip) for the row.
+	function row:SetLabel(text, tipText)
+		self.label:SetText(text)
+		self.tipTitle, self.tipText = text, tipText
+	end
+	return row
+end
+
+-- Stacks rows in a box: each row spans the box (left and right padding), `pitch` apart, from `top`.
+function UI.StackRows(box, rows, top, pitch, pad)
+	pad = pad or 12
+	for i, row in ipairs(rows) do
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", box, "TOPLEFT", pad, -(top + (i - 1) * pitch))
+		row:SetPoint("TOPRIGHT", box, "TOPRIGHT", -pad, -(top + (i - 1) * pitch))
+	end
+end
+
+-- Row spacing that leaves room for the small font as it really is (UI addons often make fonts bigger).
+function UI.Pitch(fs, minimum)
+	return math.max(minimum or 18, W.LineHeight(fs) + 6)
 end
