@@ -1,0 +1,8 @@
+# Local test helpers (see tests/run_tests.py)
+.venv/
+__pycache__/
+# Blizzard UI source clones for the API check
+ref/
+
+# Build output (GitHub Actions builds the CurseForge zip)
+*.zip

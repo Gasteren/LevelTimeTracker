@@ -1,17 +1,27 @@
-## Interface: 120007, 120100, 120105, 10601, 16001
+## Interface: 120105, 120107, 16001
 
 ## Title: Level Time Tracker
+## Version: 2.0.0
+## Notes: See how long every level takes, on every character: the time per level, XP per hour, the time to the next level and your whole leveling journey. For World of Warcraft: Midnight and World of Warcraft: Forever.
 ## Author: Frost-Lightbringer
-## Notes: Track exactly how long each level takes, with live XP/hour, progress tracking, and a clean in-game UI.
-## Version: 1.0.0
-## SavedVariables: LevelTimeTrackerDB
 ## X-Curse-Project-ID: 1425147
-
-
-## DefaultState: enabled
-
 ## IconTexture: Interface\ICONS\ability_bossmagistrix_timewarp2
 
+## AllowLoadGameType: mainline
+## DefaultState: enabled
+## SavedVariables: LevelTimeTrackerDB
+## AddonCompartmentFunc: LevelTimeTracker_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: LevelTimeTracker_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: LevelTimeTracker_OnAddonCompartmentLeave
+
 Core.lua
+Data.lua
+Tracker.lua
+Widgets.lua
 UI.lua
-Graph.lua
+Overview.lua
+Levels.lua
+Characters.lua
+Options.lua
+Mini.lua
+Slash.lua

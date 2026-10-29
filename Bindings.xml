@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="LEVELTIMETRACKER_TOGGLE" header="LEVELTIMETRACKER" category="ADDONS">
+		if LevelTimeTracker and LevelTimeTracker.Toggle then LevelTimeTracker.Toggle() end
+	</Binding>
+	<Binding name="LEVELTIMETRACKER_MINI" category="ADDONS">
+		if LevelTimeTracker and LevelTimeTracker.ToggleMini then LevelTimeTracker.ToggleMini() end
+	</Binding>
+</Bindings>
