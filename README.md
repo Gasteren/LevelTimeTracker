@@ -74,6 +74,7 @@ Open them with `/ltt options`, or in the game's **Options → AddOns → Level T
 - **Time counts like `/played`.** When you log in, Level Time Tracker asks the game for `/played` once (without printing it in chat) and runs its own clock from there. AFK time while logged in counts, just like it does for `/played`.
 - **Updating from 1.x?** Your old level times are kept and marked as such (1.x didn't keep dates or zones). Times that 1.x couldn't measure show as *not timed*.
 - **XP per hour** needs a couple of minutes of play before it shows, so one quest turned in right after logging in doesn't look like your pace.
+- **WoW: Forever's two-part names.** Characters are kept under their full name ("Drek Stone"), so characters with the same first name each keep their own times. If version 2.0.0 split a character's times in two after Forever stopped naming realms, they're joined back together the next time you log in on that character.
 
 ---
 

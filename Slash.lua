@@ -131,14 +131,19 @@ BINDING_HEADER_LEVELTIMETRACKER = ns.title
 BINDING_NAME_LEVELTIMETRACKER_TOGGLE = L["Open or close the window"]
 BINDING_NAME_LEVELTIMETRACKER_MINI = L["Show or hide the mini tracker"]
 
--- One line in chat the first time this version runs, so players updating from 1.x know where things went.
+-- One line in chat on a new install, or the first time after updating from 1.x, so players know where things went.
+-- Updates of version 2 stay quiet.
 local Hello = ns:NewModule("Hello")
 function Hello:Enable()
 	if ns.S.hello == ns.version then
 		return
 	end
+	local before = ns.S.hello
 	local updated = ns.db.migratedFrom ~= nil
 	ns.S.hello = ns.version
+	if before then
+		return
+	end
 	C_Timer.After(6, function()
 		if updated then
 			ns.Print(L["version %s has a new look and now times your levels like /played does. Type %s to open it."],

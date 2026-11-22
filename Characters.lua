@@ -21,10 +21,11 @@ local COLUMNS = {
 		key = "name", label = L["Character"], fill = true,
 		get = function(c)
 			local you = c.key == ns.Tracker.key and C(COLOR.grey, " " .. L["(you)"]) or ""
-			return format("%s %s%s  %s", U.ClassIcon(c.class, 14), C(U.ClassHex(c.class), c.name or "?"), you, C(COLOR.grey, c.realm or ""))
+			return format("%s %s%s  %s", U.ClassIcon(c.class, 14), C(U.ClassHex(c.class), Data.FullName(c)), you,
+				C(COLOR.grey, Data.Realm(c)))
 		end,
 		sortValue = function(c)
-			return (c.name or ""):lower() .. "-" .. (c.realm or ""):lower()
+			return Data.FullName(c):lower() .. "-" .. Data.Realm(c):lower()
 		end,
 	},
 	{
@@ -124,7 +125,7 @@ local function charTip(c, row)
 	if c.key ~= ns.Tracker.key then
 		lines[#lines + 1] = C(COLOR.grey, L["Right-click: forget this character"])
 	end
-	W.ShowTip(row, C(U.ClassHex(c.class), (c.name or "?") .. " - " .. (c.realm or "")), lines)
+	W.ShowTip(row, C(U.ClassHex(c.class), Data.Label(c)), lines)
 end
 
 local function create(panel)
@@ -149,7 +150,7 @@ local function create(panel)
 		onClick = function(c, _, button)
 			if button == "RightButton" then
 				if c.key ~= ns.Tracker.key then
-					StaticPopup_Show("LEVELTIMETRACKER_FORGET", (c.name or "?") .. " - " .. (c.realm or ""), nil, c.key)
+					StaticPopup_Show("LEVELTIMETRACKER_FORGET", Data.Label(c), nil, c.key)
 				end
 				return
 			end

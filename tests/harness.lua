@@ -172,8 +172,9 @@ local ADDON_GLOBALS = {
 	BINDING_NAME_LEVELTIMETRACKER_MINI = true, LevelTimeTracker_OnAddonCompartmentClick = true,
 	LevelTimeTracker_OnAddonCompartmentEnter = true, LevelTimeTracker_OnAddonCompartmentLeave = true,
 }
--- Saved variables are nil until the game loads them; the addon may read them first.
-local OPTIONAL = { LevelTimeTrackerDB = true }
+-- Saved variables are nil until the game loads them; the addon may read them first. RegionalUniqueNamesEnabled is
+-- WoW: Forever's (run_tests.py checks it there only).
+local OPTIONAL = { LevelTimeTrackerDB = true, RegionalUniqueNamesEnabled = true }
 MOCK.missingGlobals = {}
 MOCK.strayGlobals = {}
 setmetatable(_G, {
