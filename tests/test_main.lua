@@ -1,6 +1,8 @@
 -- test_main.lua: Level Time Tracker's tests. Each test runs in a fresh game (run_tests.py), once as World of Warcraft:
 -- Midnight and once as World of Warcraft: Forever.
-local KEY = "Frost-Lightbringer"
+-- Midnight keeps a character under its name and realm, WoW: Forever under its two names.
+local FOREVER = MOCK.flavor == "forever"
+local KEY = FOREVER and "Frost-Winterborn" or "Frost-Lightbringer"
 
 local function char()
 	return NS.Tracker.char
@@ -12,7 +14,12 @@ end
 
 -- A saved character (the shape Level Time Tracker 2 saves).
 local function savedChar(fields)
-	local c = { name = "Frost", realm = "Lightbringer", class = "MAGE", race = "Human", level = MOCK.player.level, levels = {} }
+	local c = { name = "Frost", class = "MAGE", race = "Human", level = MOCK.player.level, levels = {} }
+	if FOREVER then
+		c.surname = "Winterborn"
+	else
+		c.realm = "Lightbringer"
+	end
 	for k, v in pairs(fields or {}) do c[k] = v end
 	return c
 end
@@ -346,7 +353,8 @@ T("Level Time Tracker 1.x data is kept", function()
 	Eq(saved.version, 2)
 	Eq(saved.ui, nil, "the old window settings are gone")
 	Eq(saved.profile, nil)
-	local c = saved.chars[KEY]
+	-- Midnight: the character playing. WoW: Forever keeps it apart: 1.x knew no second names.
+	local c = saved.chars["Frost-Lightbringer"]
 	Eq(c.levels[8].t, 67, "1.x time kept (rounded)")
 	Ok(c.levels[8].legacy, "marked as 1.x")
 	Eq(c.levels[9].t, 291)
@@ -360,9 +368,9 @@ T("Level Time Tracker 1.x data is kept", function()
 	Eq(saved.migratedFrom, 1)
 	Chat()
 	MOCK.Advance(6)
-	Has(Chat(), "version 2.0.0 has a new look and now times your levels like /played does. Type /ltt to open it.")
+	Has(Chat(), "version " .. NS.version .. " has a new look and now times your levels like /played does. Type /ltt to open it.")
 	-- The 1.x levels show up as such.
-	NS.UI.ShowLevels(nil)
+	NS.UI.ShowLevels("Frost-Lightbringer")
 	local list = NS.UI.panels.levels.list
 	Ok(#list.view >= 5)
 	MOCK.Advance(1)
@@ -382,6 +390,175 @@ T("broken saved variables don't stop the addon", function()
 	Ok(LevelTimeTrackerDB.chars[KEY], "the character is recorded")
 	Eq(NS.S.announce, true, "defaults")
 end)
+
+T("an update of version 2 doesn't say hello again", function()
+	Boot({ db = db(nil, { hello = "an earlier version" }) })
+	Chat()
+	MOCK.Advance(6)
+	Eq(Chat(), "")
+	Eq(NS.S.hello, NS.version)
+end)
+
+---------------------------------------------------------------------------
+-- Who is playing: a name and a realm, or WoW: Forever's two names
+---------------------------------------------------------------------------
+T("a character is kept under its name and realm, or its two names on WoW: Forever", function()
+	Boot()
+	Eq(tracker().key, KEY)
+	Ok(LevelTimeTrackerDB.chars[KEY] == char(), "recorded under " .. KEY)
+	Eq(char().guid, MOCK.player.guid)
+	Eq(NS.Data.Label(char()), FOREVER and "Frost Winterborn" or "Frost - Lightbringer")
+end)
+
+T("WoW: Forever: characters with the same first name keep their own levels", function()
+	local pyah = savedChar({ surname = "Pyah", class = "PALADIN", level = 30, guid = "Player-1084-0000AAAA",
+		played = 91000, levelPlayed = 1000, levels = { [29] = { t = 3000, played = 90000 } } })
+	Boot({ db = db({ ["Frost-Pyah"] = pyah }) })
+	local chars = LevelTimeTrackerDB.chars
+	Eq(tracker().key, "Frost-Winterborn")
+	Eq(chars["Frost-"], nil, "not under the first name alone")
+	MOCK.LevelUp()
+	Ok(char().levels[12].t, "Frost Winterborn's level 12")
+	Eq(chars["Frost-Pyah"].levels[12], nil, "isn't Frost Pyah's")
+	Eq(chars["Frost-Pyah"].level, 30)
+	Eq(chars["Frost-Pyah"].levels[29].t, 3000)
+end, "forever")
+
+T("WoW: Forever: the two names win over a server name from the realm functions", function()
+	-- Before November 2026 Forever's realm functions named the server, which many characters share.
+	Boot({ player = { realm = "CAMWOWEU5Realm5PvE" } })
+	Eq(tracker().key, "Frost-Winterborn")
+	Eq(NS.Data.Label(char()), "Frost Winterborn")
+end, "forever")
+
+T("a character saved under another name is found by its GUID, right at login", function()
+	local old = savedChar({ name = "Oldname", guid = MOCK.player.guid, levels = { [11] = { t = 800, played = 17100 } } })
+	local oldKey = FOREVER and "Oldname-Winterborn" or "Oldname-Lightbringer"
+	Boot({ db = db({ [oldKey] = old }), wait = 0.1 })
+	Ok(not tracker():Synced(), "before /played answers")
+	Eq(LevelTimeTrackerDB.chars[oldKey], nil, "moved")
+	Ok(LevelTimeTrackerDB.chars[KEY] == char(), "under the name it has now")
+	Eq(char().levels[11].t, 800, "with its levels")
+	Eq(char().name, "Frost")
+end)
+
+T("a name another character had: that character's levels move aside, under its GUID", function()
+	-- Two characters swapped names: the one playing now (Beta before) takes Frost; the old Frost is called Beta now.
+	local oldFrost = savedChar({ guid = "Player-1084-0000A1FA", level = 30, levels = { [29] = { t = 3000, played = 90000 } } })
+	local beta = savedChar({ name = "Beta", guid = MOCK.player.guid, levels = { [11] = { t = 800, played = 17100 } } })
+	local betaKey = FOREVER and "Beta-Winterborn" or "Beta-Lightbringer"
+	Boot({ db = db({ [KEY] = oldFrost, [betaKey] = beta }) })
+	local chars = LevelTimeTrackerDB.chars
+	Ok(chars[KEY] == char(), "this character under its name")
+	Eq(char().levels[11].t, 800, "with its own levels")
+	Eq(char().levels[29], nil, "and not the old Frost's")
+	Eq(chars[betaKey], nil)
+	local moved = chars["Player-1084-0000A1FA"]
+	Ok(moved, "the old Frost's record, kept under its GUID")
+	Eq(moved.levels[29].t, 3000)
+	Eq(moved.level, 30)
+end)
+
+T("characters that only share a name and class and a small /played are never joined", function()
+	-- This character was timed from level 1 (/played 0 then); a namesake alt is still on level 1, another one reached
+	-- level 3 two seconds after this one did.
+	local mine = savedChar({ levels = { [1] = { t = 600, played = 600 }, [2] = { t = 900, played = 1500 },
+		[3] = { t = 1200, played = 2700 } } })
+	local onFirst = { name = "Frost", realm = "Draenor", class = "MAGE", level = 1, levels = {}, played = 300,
+		levelPlayed = 300, playedAt = MOCK.ServerTime() - 86400 }
+	local closeCall = { name = "Frost", realm = "Kazzak", class = "MAGE", level = 3, levels = {}, played = 1802,
+		levelPlayed = 300, playedAt = MOCK.ServerTime() - 86400 }
+	Boot({ db = db({ [KEY] = mine, ["Frost-Draenor"] = onFirst, ["Frost-Kazzak"] = closeCall }) })
+	Ok(LevelTimeTrackerDB.chars["Frost-Draenor"], "the level 1 alt stays")
+	Ok(LevelTimeTrackerDB.chars["Frost-Kazzak"], "the level 3 alt stays")
+	HasNot(Chat(), "earlier level times")
+end)
+
+T("a namesake that can't be this character isn't joined, even when it reached the level at the same /played", function()
+	-- This character reached level 12 at /played 17100 (18000 - 900 now); so did all three namesakes. One has more /played
+	-- than this character, one would have played 800 s in the last minute, one is known as another character (GUID).
+	local now = MOCK.ServerTime()
+	local ahead = { name = "Frost", realm = "Draenor", class = "MAGE", level = 12, levels = {}, played = 30000,
+		levelPlayed = 12900, playedAt = now - 86400 }
+	local tooFast = { name = "Frost", realm = "Kazzak", class = "MAGE", level = 12, levels = {}, played = 17200,
+		levelPlayed = 100, playedAt = now - 60 }
+	local another = { name = "Frost", realm = "Silvermoon", class = "MAGE", level = 12, levels = {}, played = 17500,
+		levelPlayed = 400, playedAt = now - 86400, guid = "Player-1084-0000BEEF" }
+	Boot({ db = db({ ["Frost-Draenor"] = ahead, ["Frost-Kazzak"] = tooFast, ["Frost-Silvermoon"] = another }) })
+	Ok(LevelTimeTrackerDB.chars["Frost-Draenor"], "more /played than this character")
+	Ok(LevelTimeTrackerDB.chars["Frost-Kazzak"], "more /played than time went by")
+	Ok(LevelTimeTrackerDB.chars["Frost-Silvermoon"], "another character's GUID")
+	HasNot(Chat(), "earlier level times")
+end)
+
+T("this character's own record is never wiped, even at a lower level (a level squish)", function()
+	Boot({ db = db({ [KEY] = savedChar({ guid = MOCK.player.guid, level = 20, levels = { [15] = { t = 999 } } }) }) })
+	Eq(char().levels[15].t, 999)
+	Eq(char().level, 12)
+end)
+
+T("an earlier record of this character, saved before characters had a GUID, is joined by its /played", function()
+	-- Saved under the realm the game named then. Level 12 was reached at /played 17100, as the game says now (18000 - 900).
+	local old = { name = "Frost", realm = "Oldrealm", class = "MAGE", race = "Human", level = 12, played = 17500,
+		levelPlayed = 400, levels = { [11] = { t = 800, played = 17100 } }, first = { level = 11, at = 1792000000 } }
+	Boot({ db = db({ ["Frost-Oldrealm"] = old }) })
+	Eq(LevelTimeTrackerDB.chars["Frost-Oldrealm"], nil, "joined")
+	Eq(char().levels[11].t, 800)
+	Eq(char().first.level, 11)
+	Has(Chat(), "found this character's earlier level times, saved as Frost - Oldrealm, and joined them back in. Timing since level 11.")
+end)
+
+T("WoW: Forever: levels split by the realm name changing are joined back together", function()
+	-- Drek timed levels 8 to 44 while the game named the realm (Drek-CAMWOWEU5Realm4PVP). Then the game answered "" and
+	-- 2.0.0 started a new record (Drek-), which timed level 44. /played: level 44 reached at 400000 s, level 45 at
+	-- 423640 s (6h 34m later), 1000 s on level 45 now.
+	local now = MOCK.ServerTime()
+	local levels = {}
+	for lvl = 8, 43 do
+		levels[lvl] = { t = 9000, played = 400000 - (43 - lvl) * 9000, at = now - 2 * 86400 }
+	end
+	local old = { name = "Drek", realm = "CAMWOWEU5Realm4PVP", class = "WARRIOR", race = "Orc", level = 44,
+		levels = levels, first = { level = 8, at = now - 40 * 86400 }, played = 405000, levelPlayed = 5000,
+		playedAt = now - 86400, lastSeen = now - 86400 }
+	local split = { name = "Drek", realm = "", class = "WARRIOR", race = "Orc", level = 45,
+		levels = { [44] = { t = 23640, played = 423640, at = now - 4000, zone = "Desolace" } },
+		first = { level = 44, at = now - 30000 }, played = 424000, levelPlayed = 360, playedAt = now - 3600,
+		lastSeen = now - 3600 }
+	-- Another Drek on another server, a Drek of another class with the very same /played, and Drekstar.
+	local otherDrek = { name = "Drek", realm = "CAMWOWEU4Realm1PvE", class = "WARRIOR", level = 44, levels = {},
+		played = 500000, levelPlayed = 2000 }
+	local namesake = { name = "Drek", realm = "CAMWOWEU5Realm5PvE", class = "MAGE", level = 44, levels = {},
+		played = 405000, levelPlayed = 5000 }
+	local drekstar = { name = "Drekstar", realm = "CAMWOWEU5Realm4PVP", class = "HUNTER", level = 26, levels = {},
+		played = 138000, levelPlayed = 900 }
+	MOCK.played = { total = 424640, level = 1000, at = MOCK.now }
+	Boot({
+		db = db({ ["Drek-CAMWOWEU5Realm4PVP"] = old, ["Drek-"] = split, ["Drek-CAMWOWEU4Realm1PvE"] = otherDrek,
+			["Drek-CAMWOWEU5Realm5PvE"] = namesake, ["Drekstar-CAMWOWEU5Realm4PVP"] = drekstar }),
+		player = { name = "Drek", surname = "Stone", class = "WARRIOR", className = "Warrior", race = "Orc", level = 45 },
+	})
+	local chars = LevelTimeTrackerDB.chars
+	Eq(tracker().key, "Drek-Stone")
+	Eq(chars["Drek-CAMWOWEU5Realm4PVP"], nil, "levels 8 to 44 joined in")
+	Eq(chars["Drek-"], nil, "level 44 joined in")
+	local c = chars["Drek-Stone"]
+	Eq(c.levels[8].t, 9000)
+	Eq(c.levels[43].t, 9000)
+	Eq(c.levels[44].t, 23640)
+	Eq(c.levels[44].zone, "Desolace")
+	Eq(c.first.level, 8)
+	Eq(c.first.at, now - 40 * 86400)
+	Ok(chars["Drek-CAMWOWEU4Realm1PvE"], "another Drek stays apart")
+	Ok(chars["Drek-CAMWOWEU5Realm5PvE"], "a Drek of another class stays apart")
+	Ok(chars["Drekstar-CAMWOWEU5Realm4PVP"], "Drekstar stays")
+	Has(Chat(), "found this character's earlier level times in 2 records and joined them back in. Timing since level 8.")
+	NS.UI.Show("characters")
+	MOCK.Advance(0.01)
+	local list = NS.UI.panels.characters.list
+	Eq(#list.view, 4)
+	Has(Text(list.rows[1].cells[1]), "Drek Stone (you)")
+	Eq(Text(list.rows[1].cells[3]), "4d 0h", "time leveling: 36 levels of 2h 30m, and 6h 34m")
+end, "forever")
 
 ---------------------------------------------------------------------------
 -- The window
@@ -422,7 +599,7 @@ T("the Overview shows the banner, this level, the session, recent levels and rec
 	MOCK.Advance(1)
 	local p = NS.UI.panels.overview
 	local b = p.banner
-	Eq(Text(b.name), "Frost")
+	Eq(Text(b.name), FOREVER and "Frost Winterborn" or "Frost")
 	Eq(Text(b.sub), "Level 17 Human Mage")
 	Has(Text(b.since), "Timing since level 12")
 	Eq(b.portrait:GetTexture(), "portrait:player")
@@ -558,9 +735,15 @@ T("the Levels page: every level, fastest green, slowest orange, sorting", functi
 end)
 
 T("the Characters page: click shows a character's levels, right-click forgets one (asking first)", function()
-	local alt = savedChar({ name = "Alt", realm = "Draenor", class = "ROGUE", level = 30, lastSeen = MOCK.ServerTime() - 3 * 86400,
+	local alt = savedChar({ name = "Alt", class = "ROGUE", level = 30, lastSeen = MOCK.ServerTime() - 3 * 86400,
 		played = 50000, levels = { [28] = { t = 1800, at = MOCK.ServerTime() - 4 * 86400 }, [29] = { t = 2400 } } })
-	Boot({ db = db({ ["Alt-Draenor"] = alt }) })
+	local altKey, altLabel = "Alt-Draenor", "Alt - Draenor"
+	if FOREVER then
+		alt.surname, altKey, altLabel = "Shadowmere", "Alt-Shadowmere", "Alt Shadowmere"
+	else
+		alt.realm = "Draenor"
+	end
+	Boot({ db = db({ [altKey] = alt }) })
 	NS.UI.Show("characters")
 	MOCK.Advance(0.01)
 	local p = NS.UI.panels.characters
@@ -568,17 +751,17 @@ T("the Characters page: click shows a character's levels, right-click forgets on
 	Eq(#list.view, 2)
 	Has(Text(p.summary), "2 characters, 2 still leveling")
 	local mine, other = list.rows[1], list.rows[2]
-	Has(Text(mine.cells[1]), "Frost")
-	Has(Text(mine.cells[1]), "(you)")
+	Has(Text(mine.cells[1]), FOREVER and "Frost Winterborn (you)" or "Frost (you)  Lightbringer")
 	Eq(Text(mine.cells[6]), "Now")
-	Has(Text(other.cells[1]), "Alt")
+	Has(Text(other.cells[1]), FOREVER and "Alt Shadowmere" or "Alt  Draenor")
 	Eq(Text(other.cells[3]), "1h 10m", "time leveling")
 	Eq(Text(other.cells[6]), "3 days ago")
 	Fire(other, "OnEnter")
+	Has(MOCK.TooltipText(), altLabel)
 	Has(MOCK.TooltipText(), "Right-click: forget this character")
 	Fire(other, "OnClick", "LeftButton")
 	Eq(NS.UI.current, "levels")
-	Has(Text(NS.UI.panels.levels.name), "Alt")
+	Has(Text(NS.UI.panels.levels.name), FOREVER and "Alt Shadowmere" or "Alt  Draenor")
 	Ok(NS.UI.panels.levels.mine:IsShown(), "a way back to your own levels")
 	NS.UI.panels.levels.mine:Click()
 	Has(Text(NS.UI.panels.levels.name), "Frost")
@@ -587,9 +770,9 @@ T("the Characters page: click shows a character's levels, right-click forgets on
 	Eq(#MOCK.popups, 0, "you can't forget yourself")
 	Fire(list.rows[2], "OnClick", "RightButton")
 	Eq(#MOCK.popups, 1, "asks first")
-	Has(MOCK.popups[1].text, "Forget Alt - Draenor?")
+	Has(MOCK.popups[1].text, "Forget " .. altLabel .. "?")
 	MOCK.AcceptPopup()
-	Eq(LevelTimeTrackerDB.chars["Alt-Draenor"], nil, "forgotten")
+	Eq(LevelTimeTrackerDB.chars[altKey], nil, "forgotten")
 	MOCK.Advance(1)
 	Eq(#list.view, 1)
 end)
@@ -633,7 +816,8 @@ T("Options: switches, the UI size and the look", function()
 	for _, page in ipairs({ "overview", "levels", "characters" }) do
 		NS.UI.Show(page)
 	end
-	Has(Text(p.version), "Version 2.0.0")
+	Has(Text(p.version), "Version " .. NS.version)
+	Eq(NS.version, MOCK.api.C_AddOns.GetAddOnMetadata("LevelTimeTracker", "Version"), "the version comes from the TOC")
 end)
 
 T("every look paints every page", function()

@@ -29,6 +29,8 @@ VERIFIED_FILES = {
     "interface\\buttons\\ui-panel-minimizebutton-down",
     "interface\\buttons\\ui-panel-minimizebutton-highlight",
 }
+# Globals the addon only uses when the game has them: checked in that game only.
+GAME_ONLY = {"RegionalUniqueNamesEnabled": "Forever"}
 
 
 def sources_root():
@@ -122,6 +124,8 @@ def check_api(sources, used):
                 problems += 1
                 print(f"  API   {game}: widget method {kind}:{method} is not in the API documentation")
         for name in sorted(used["globals"]):
+            if GAME_ONLY.get(name, game) != game:
+                continue
             if name not in identifiers:
                 problems += 1
                 print(f"  API   {game}: {name} doesn't appear anywhere in Blizzard's UI code")

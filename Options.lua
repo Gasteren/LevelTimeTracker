@@ -60,7 +60,7 @@ end
 function Options.ConfirmReset()
 	local c = ns.Tracker.char
 	if c then
-		StaticPopup_Show("LEVELTIMETRACKER_RESET", c.name or "?")
+		StaticPopup_Show("LEVELTIMETRACKER_RESET", Data.FullName(c))
 	end
 end
 

@@ -316,7 +316,7 @@ local function refreshBanner(panel)
 		SetPortraitTexture(b.portrait, "player")
 	end
 	b.portrait:SetTexCoord(0, 1, 0, 1)
-	b.name:SetText(c.name or "")
+	b.name:SetText(Data.FullName(c))
 	b.name:SetTextColor(U.ClassRGB(c.class))
 	local className = c.class and LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[c.class] or ""
 	b.sub:SetText(format(L["Level %d %s %s"], T.level, c.race or "", className))

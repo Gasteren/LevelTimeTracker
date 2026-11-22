@@ -126,7 +126,30 @@ function Tracker:SetSync(total, levelTime)
 	self.sync = { total = total, level = levelTime, at = GetTime() }
 	local c = self.char
 	c.played, c.levelPlayed, c.playedAt = floor(total + 0.5), floor(levelTime + 0.5), ns.Now()
+	self:JoinEarlier()
 	ns:Fire("PLAYED")
+end
+
+-- Once /played is known: earlier records of this character (saved under another name) are joined into this one.
+function Tracker:JoinEarlier()
+	if self.joinChecked then
+		return
+	end
+	self.joinChecked = true
+	local c = self.char
+	local joined = Data.JoinEarlier(c)
+	if #joined == 0 then
+		return
+	end
+	local since = c.first and c.first.level or self.level
+	if #joined == 1 then
+		ns.Print(L["found this character's earlier level times, saved as %s, and joined them back in. Timing since level %d."],
+			Data.Label(joined[1]), since)
+	else
+		ns.Print(L["found this character's earlier level times in %d records and joined them back in. Timing since level %d."],
+			#joined, since)
+	end
+	ns:Fire("DATA_CHANGED", self.key)
 end
 
 function Tracker:OnPlayed(total, levelTime)
@@ -345,17 +368,33 @@ end
 -- Login, reload, logout
 ---------------------------------------------------------------------------
 function Tracker:Enable()
-	local key = Data.Key()
+	local me = Data.Me()
+	local key = Data.Key(me)
+	local there = Data.Get(key)
+	if there and there.guid and me.guid and there.guid ~= me.guid then
+		Data.MoveAside(key)
+		there = nil
+	end
+	if not there and me.guid then
+		-- The same character saved under another key: renamed, or the game changed how it names characters.
+		local oldKey = Data.FindGUID(me.guid, key)
+		if oldKey then
+			Data.Rekey(oldKey, key)
+		end
+	end
 	local c = Data.Ensure(key)
 	local level = tonumber(U.Plain(UnitLevel("player"))) or 1
 	local _, classFile = UnitClass("player")
 	classFile = U.Plain(classFile)
-	-- A new character with the name of a deleted one starts over.
-	if c.level and (level < c.level or (c.class and classFile and c.class ~= classFile)) then
+	-- A record from before characters had a GUID, of a deleted character whose name a new one took: start over.
+	if not c.guid and c.level and (level < c.level or (c.class and classFile and c.class ~= classFile)) then
 		c.levels, c.first, c.played, c.levelPlayed, c.playedAt, c.session = {}, nil, nil, nil, nil, nil
 	end
 	c.key = key
-	c.name = U.Plain(UnitName("player")) or c.name
+	c.guid = me.guid or c.guid
+	c.name = me.name or c.name
+	c.surname = me.surname
+	c.realm = me.realm
 	c.class = classFile or c.class
 	c.race = U.Plain((UnitRace("player"))) or c.race
 	c.faction = U.Plain((UnitFactionGroup("player"))) or c.faction

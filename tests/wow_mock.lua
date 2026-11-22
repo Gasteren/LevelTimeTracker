@@ -208,8 +208,10 @@ MOCK.maxLevel = FOREVER and 60 or 90
 function MOCK.XPFor(level)
 	return FOREVER and (400 + level * 180) or (1000 + level * 250)
 end
+-- WoW: Forever: every character has a second name ("Frost Winterborn") and the realm functions answer "".
 MOCK.player = {
-	name = "Frost", realm = "Lightbringer", level = 12, xp = 0, rested = 0, class = "MAGE", className = "Mage",
+	name = "Frost", surname = FOREVER and "Winterborn" or nil, realm = FOREVER and "" or "Lightbringer",
+	guid = "Player-1084-0B2C3D4E", level = 12, xp = 0, rested = 0, class = "MAGE", className = "Mage",
 	race = "Human", faction = "Alliance", zone = "Elwynn Forest", resting = false, xpDisabled = false,
 }
 MOCK.player.xpMax = MOCK.XPFor(MOCK.player.level)
@@ -223,7 +225,14 @@ end
 MOCK.playedDelay = 0.4
 
 local function player(unit) return unit == "player" end
-api.UnitName = function(unit) if player(unit) then return MOCK.player.name end end
+-- The name, and on WoW: Forever the second name (Blizzard's Camelot NameUtil.lua); realm clients give no realm for
+-- the player.
+api.UnitName = function(unit) if player(unit) then return MOCK.player.name, MOCK.player.surname end end
+api.UnitNameUnmodified = function(unit) if player(unit) then return MOCK.player.name, MOCK.player.surname end end
+api.UnitGUID = function(unit) if player(unit) then return MOCK.player.guid end end
+if FOREVER then
+	api.RegionalUniqueNamesEnabled = function() return true end
+end
 api.GetNormalizedRealmName = function() return MOCK.player.realm end
 api.GetRealmName = function() return MOCK.player.realm end
 api.UnitLevel = function(unit) if player(unit) then return MOCK.player.level end return 0 end

@@ -1,4 +1,5 @@
--- Data.lua: the saved variables. Settings, and every character's levels:
+-- Data.lua: the saved variables. Settings, and every character, under "Name-Realm" ("Name-Surname" on WoW: Forever):
+--   name, surname (WoW: Forever's second name), realm, guid: who it is (see Data.Me)
 --   levels[n] = { t = seconds spent on level n, at = when level n + 1 was reached (realm time),
 --                 played = /played in total at that moment, zone = where, skipped = true (no time on it),
 --                 legacy = true (recorded by Level Time Tracker 1.x, which only kept the time) }
@@ -8,7 +9,7 @@ local L, U = ns.L, ns.U
 local Data = {}
 ns.Data = Data
 
-local floor, max, min = math.floor, math.max, math.min
+local floor, max, min, abs = math.floor, math.max, math.min, math.abs
 
 Data.VERSION = 2
 
@@ -123,11 +124,117 @@ function Data.Defaults()
 	return DEFAULTS
 end
 
--- "Name-Realm", as Level Time Tracker 1.x keyed characters.
-function Data.Key(name, realm)
-	name = name or UnitName("player")
-	realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName()) or "?"
-	return name .. "-" .. (realm:gsub("%s", ""))
+---------------------------------------------------------------------------
+-- Who is playing. Realm clients name a character "Name-Realm". WoW: Forever gives every character a two-part name,
+-- unique in the region ("Drek Stone"): the second name takes the place of the realm. Forever's realm functions name a
+-- server that many characters with the same first name share ("CAMWOWEU5Realm4PVP"), and since November 2026 they
+-- answer "".
+---------------------------------------------------------------------------
+local function plainText(v)
+	v = U.Plain(v)
+	if type(v) == "string" then
+		v = v:gsub("^%s+", ""):gsub("%s+$", "")
+		if v ~= "" then
+			return v
+		end
+	end
+end
+
+function Data.TwoPartNames()
+	local enabled = RegionalUniqueNamesEnabled
+	if type(enabled) ~= "function" then
+		return false
+	end
+	local ok, on = pcall(enabled)
+	return ok and U.Plain(on) == true
+end
+
+-- { name, surname (WoW: Forever's second name), realm, guid }, each nil when the game doesn't say.
+function Data.Me()
+	local name, second
+	if UnitNameUnmodified then
+		name, second = UnitNameUnmodified("player")
+	end
+	name, second = plainText(name), plainText(second)
+	name = name or plainText((UnitName("player")))
+	local realm = plainText(GetNormalizedRealmName and GetNormalizedRealmName())
+		or plainText(GetRealmName and GetRealmName())
+	realm = realm and (realm:gsub("%s", ""))
+	local surname
+	if Data.TwoPartNames() or not realm then
+		surname = second
+		if not surname and name then
+			-- Both names in one string, "Drek Stone".
+			local first, last = name:match("^(%S+)%s+(%S+)$")
+			if first then
+				name, surname = first, last
+			end
+		end
+	end
+	return { name = name, surname = surname, realm = realm, guid = plainText(UnitGUID and UnitGUID("player")) }
+end
+
+-- "Name-Realm", as Level Time Tracker 1.x keyed characters, or "Name-Surname" on WoW: Forever.
+function Data.Key(me)
+	me = me or Data.Me()
+	local second = me.surname or me.realm
+	if second then
+		return (me.name or "?") .. "-" .. second
+	end
+	return me.guid or me.name or "?"
+end
+
+-- "Drek Stone" on WoW: Forever, otherwise the name.
+function Data.FullName(c)
+	if c.surname then
+		return (c.name or "?") .. " " .. c.surname
+	end
+	return c.name or "?"
+end
+
+-- The realm shown next to the name (none for a two-part name).
+function Data.Realm(c)
+	return not c.surname and c.realm or ""
+end
+
+-- The character as lists and questions name it: "Drek Stone", or "Frost - Lightbringer".
+function Data.Label(c)
+	local realm = Data.Realm(c)
+	if realm ~= "" then
+		return Data.FullName(c) .. " - " .. realm
+	end
+	return Data.FullName(c)
+end
+
+-- The key of another record of this GUID: the same character, saved under an older name.
+function Data.FindGUID(guid, except)
+	for key, c in pairs(ns.db.chars) do
+		if key ~= except and type(c) == "table" and c.guid == guid then
+			return key
+		end
+	end
+end
+
+function Data.Rekey(from, to)
+	local chars = ns.db.chars
+	local c = chars[from]
+	chars[from], chars[to] = nil, c
+	c.key = to
+	return c
+end
+
+-- Another character took the name of the record at `key` (renamed or deleted since): the record moves to the key of
+-- its own GUID, where that character finds it again.
+function Data.MoveAside(key)
+	local chars = ns.db.chars
+	local c = chars[key]
+	local there = chars[c.guid]
+	if type(there) == "table" and type(there.levels) == "table" then
+		Data.Merge(there, c)
+		chars[key] = nil
+		return there
+	end
+	return Data.Rekey(key, c.guid)
 end
 
 function Data.Get(key)
@@ -232,6 +339,99 @@ end
 function Data.PlayedAt(c, level)
 	local e = c.levels[level - 1]
 	return e and e.played
+end
+
+---------------------------------------------------------------------------
+-- One character, two records: after a rename, or when the game changed how it names characters (Level Time Tracker
+-- 2.0.0 on WoW: Forever), the character was saved under a new key. The older record is joined back in.
+---------------------------------------------------------------------------
+-- Seconds the saved values may differ by (each one is rounded, and a level-up is timed on this computer).
+local SAME_PLAYED = 5
+-- In its first hour, a character's /played is too small a number to tell it from another one.
+local MIN_PLAYED = 3600
+
+local function num(v)
+	return type(v) == "number" and v or nil
+end
+
+-- /played in total when the character reached `level`, as record c knows it. /played and the time on the level grow
+-- together, so their difference is the same in every answer while the character is on that level.
+function Data.PlayedAtLevel(c, level)
+	local played, onLevel = num(c.played), num(c.levelPlayed)
+	if c.level == level and played and onLevel then
+		return played - onLevel
+	end
+	local e = c.levels[level]
+	if type(e) == "table" and num(e.played) and num(e.t) then
+		return e.played - e.t
+	end
+	local before = c.levels[level - 1]
+	return type(before) == "table" and num(before.played) or nil
+end
+
+local function sameName(a, b)
+	return type(a) == "string" and type(b) == "string" and a:lower() == b:lower()
+end
+
+-- Is `other` an earlier record of character c (whose /played is known)? The same GUID says so. A record saved before
+-- characters had a GUID needs the same name and class, and the same /played, to the second, when it reached its last
+-- level; /played can't shrink or grow faster than the clock since.
+function Data.SameCharacter(c, other)
+	if c.guid and other.guid then
+		return c.guid == other.guid
+	end
+	if not sameName(c.name, other.name) or (c.class and other.class and c.class ~= other.class) then
+		return false
+	end
+	local level = tonumber(other.level)
+	if not level or not c.level or level > c.level then
+		return false
+	end
+	local played, before = num(c.played), num(other.played)
+	if played and before then
+		local now, at = num(c.playedAt), num(other.playedAt)
+		if before > played + SAME_PLAYED or (now and at and played - before > now - at + SAME_PLAYED) then
+			return false
+		end
+	end
+	local mine, theirs = Data.PlayedAtLevel(c, level), Data.PlayedAtLevel(other, level)
+	return mine ~= nil and theirs ~= nil and theirs >= MIN_PLAYED and abs(mine - theirs) <= SAME_PLAYED
+end
+
+-- Adds what `from` knows to c: the levels c has no time for, and an earlier start.
+function Data.Merge(c, from)
+	for lvl, e in pairs(from.levels) do
+		local mine = c.levels[lvl]
+		if type(e) == "table" and (type(mine) ~= "table" or (not Data.Timed(mine) and Data.Timed(e))) then
+			c.levels[lvl] = e
+		end
+	end
+	local f, g = from.first, c.first
+	if type(f) == "table" and f.level and not (type(g) == "table" and g.level and g.level <= f.level) then
+		c.first = f
+	end
+	c.class, c.race, c.faction = c.class or from.class, c.race or from.race, c.faction or from.faction
+end
+
+-- Joins every earlier record of character c into c, and returns them.
+function Data.JoinEarlier(c)
+	local joined = {}
+	local chars = ns.db.chars
+	local again = true
+	while again do
+		again = false
+		for key, other in pairs(chars) do
+			if other ~= c and type(other) == "table" and type(other.levels) == "table" and Data.SameCharacter(c, other) then
+				Data.Merge(c, other)
+				chars[key] = nil
+				joined[#joined + 1] = other
+				-- What it brought may tie in another one (an older level).
+				again = true
+				break
+			end
+		end
+	end
+	return joined
 end
 
 function Data.Total()

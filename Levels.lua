@@ -132,8 +132,8 @@ local function refresh(panel)
 	end
 	local mine = UI.ViewKey() == ns.Tracker.key
 	panel.mine:SetShown(not mine)
-	panel.name:SetText(format("%s %s", U.ClassIcon(c.class, 18), C(U.ClassHex(c.class), c.name or "?"))
-		.. C(COLOR.grey, "  " .. (c.realm or "")))
+	panel.name:SetText(format("%s %s", U.ClassIcon(c.class, 18), C(U.ClassHex(c.class), Data.FullName(c)))
+		.. C(COLOR.grey, "  " .. Data.Realm(c)))
 	local s = Data.Stats(c)
 	UI.levelStats = s
 	local parts = { format(L["Level %d"], c.level or 0) }
