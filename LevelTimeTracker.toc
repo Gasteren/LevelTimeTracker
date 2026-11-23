@@ -1,7 +1,7 @@
 ## Interface: 120105, 120107, 16001
 
 ## Title: Level Time Tracker
-## Version: 2.0.1
+## Version: 2.0.2
 ## Notes: See how long every level takes, on every character: the time per level, XP per hour, the time to the next level and your whole leveling journey. For World of Warcraft: Midnight and World of Warcraft: Forever.
 ## Author: Frost Forever | EU Normal Ruleset
 ## X-Curse-Project-ID: 1425147
